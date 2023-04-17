@@ -2,8 +2,6 @@ import binascii
 import socket
 from dnslib import DNSRecord
 
-ip_root = "192.33.4.12"
-ip_port = 54
 
 def parse_raw_dns(message):
     parsed = DNSRecord.parse(message)
@@ -24,17 +22,35 @@ def parse_raw_dns(message):
     return struct
 
 def resolver(mensaje_consulta):
-    pass
+    new_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    new_sock.sendto(mensaje_consulta,root)
+    message,address = new_sock.recvfrom(buff_size)
+    parsed = parse_raw_dns(message)
+    if parsed["ANCOUNT"] > 0:
+        for record in parsed["Answer"]:
+            if record.rclass == 1:
+                return message
+    elif parsed["NSCOUNT"] > 0:
+        for record in parsed["Additional"]:
+            if record.rclass == 1:
+                pass #mandar message a records
+            
 
-buff_size = 2048
-socket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+
+ 
+
+
+root = ('192.33.4.12', 53)
 resolver_address = ("localhost", 8000)
-socket.bind(resolver_address)
-while(True):
-    message,_ = socket.recvfrom(buff_size)
+buff_size = 2048
+resolver_socket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+resolver_socket.bind(resolver_address)
 
-    struct = parse_raw_dns(message)
-    print(struct)
+
+while(True):
+    message,_ = resolver_socket.recvfrom(buff_size)
+
+    resolver(message)
 
 
 
