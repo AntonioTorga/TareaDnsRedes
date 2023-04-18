@@ -1,6 +1,11 @@
 import binascii
 import socket
-from dnslib import DNSRecord
+import sys
+from dnslib import DNSRecord, RR, QTYPE
+
+debug = False
+if len(sys.argv)>1:
+    debug = True if sys.argv[1]=="debug" else False
 
 
 def parse_raw_dns(message):
@@ -46,8 +51,12 @@ def res_aux(mes,mensaje_consulta,debug=False):
                     add = (str(item.rdata),53)
                     if debug:
                         print(f'(debug) Consultando "{parsed_mes["Qname"]}" a "{item.rname}" en "{item.rdata}"')
+
                     new_sock.sendto(mensaje_consulta,add)
                     response,_ = new_sock.recvfrom(buff_size)
+
+
+
             if (not ip_found):
                 ns_name=""
                 for item in parsed_mes["Authority"]:
@@ -66,8 +75,10 @@ def res_aux(mes,mensaje_consulta,debug=False):
                     if ns_ip!="":
                         if debug:
                             print(f'(debug) Consultando "{parsed_mes["Qname"]}" a "{ns_name}" en "{ns_ip}"')
+
                         new_sock.sendto(mensaje_consulta,(ns_ip,53))
                         response,_ = new_sock.recvfrom(buff_size)
+
         return response
 
 def resolver(mensaje_consulta,debug=False):
@@ -79,9 +90,14 @@ def resolver(mensaje_consulta,debug=False):
 
     while(parse_raw_dns(result)["ANCOUNT"]==0):
         result = res_aux(result,mensaje_consulta)
-    
+
     return result
 
+
+
+
+cache = {}
+cache_times = {}
 
 root = ('192.33.4.12', 53)
 resolver_address = ("localhost", 8000)
@@ -91,9 +107,37 @@ resolver_socket.bind(resolver_address)
 
 
 while(True):
+    cache_keys = list(cache.keys())
+
     message,req_add = resolver_socket.recvfrom(buff_size)
-    
-    result = resolver(message,True)
+
+    domain_name = parse_raw_dns(message)["Qname"]
+
+    if domain_name in cache_keys:
+        if debug:
+            print("Cached answer")
+        result = cache[domain_name]
+        message = DNSRecord.parse(message)
+        message.add_answer(RR(domain_name,QTYPE.A,rdata=DNSRecord.parse(result).a.rdata))
+        result = message.pack()
+        cache_times[domain_name]+=1
+    else:
+        result = resolver(message,True)
+
+    for k,v in cache_times.items():
+        if v <= 1:
+            del cache_times[k]
+            del cache[k]
+        else:
+            cache_times[k] -= 1
+
+
+    if (len(cache_keys)>=5):
+        erase_key = min(cache_times, key= cache_times.get)
+        del cache_times[erase_key]
+        del cache[erase_key]
+    cache[domain_name] = result
+    cache_times[domain_name] = 20
 
     resolver_socket.sendto(result, req_add)
 
